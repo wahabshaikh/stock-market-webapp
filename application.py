@@ -47,7 +47,22 @@ if not os.environ.get("API_KEY"):
 @login_required
 def index():
     """Show portfolio of stocks"""
-    return apology("TODO")
+
+    # Query database for user details
+    rows = db.execute("SELECT * FROM history where id = :id",
+                      id=session["user_id"])
+    cash = db.execute("SELECT cash FROM users WHERE id = 1")[0]["cash"]
+
+    # Add company name in the list, update to the latest price and calculate total
+    total = 0
+    for row in rows:
+        company = lookup(row["symbol"])
+        row["name"] = company["name"]
+        row["price"] = company["price"]
+        total += row["shares"] * row["price"]
+    total += cash
+
+    return render_template("index.html", rows=rows, cash=cash, total=total)
 
 
 @app.route("/buy", methods=["GET", "POST"])
@@ -59,7 +74,7 @@ def buy():
     if request.method == "POST":
 
         # Ensure symbol was submitted
-        symbol = request.form.get("symbol")
+        symbol = request.form.get("symbol").upper()
         if not symbol:
             return apology("must provide symbol", 403)
 
@@ -73,7 +88,7 @@ def buy():
         if not shares:
             return apology("must provide number of shares", 403)
 
-        # Query into database
+        # Query database for user details
         rows = db.execute("SELECT * FROM users WHERE id = :id",
                           id=session["user_id"])
 
@@ -157,8 +172,11 @@ def logout():
 @login_required
 def quote():
     """Get stock quote."""
+
     # User reached route via POST (as by submitting a form via POST)
     if request.method == "POST":
+
+        # Ensure valid symbol
         company = lookup(request.form.get("symbol"))
         if not company:
             return apology("invalid symbol", 400)
@@ -173,6 +191,7 @@ def quote():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     """Register user"""
+
     # User reached route via POST (as by submitting a form via POST)
     if request.method == "POST":
 
