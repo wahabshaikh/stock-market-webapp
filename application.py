@@ -9,6 +9,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from helpers import apology, login_required, lookup, usd
 
+from datetime import datetime
+
 # Configure application
 app = Flask(__name__)
 
@@ -52,7 +54,48 @@ def index():
 @login_required
 def buy():
     """Buy shares of stock"""
-    return apology("TODO")
+
+    # User reached route via POST (as by submitting a form via POST)
+    if request.method == "POST":
+
+        # Ensure symbol was submitted
+        symbol = request.form.get("symbol")
+        if not symbol:
+            return apology("must provide symbol", 403)
+
+        # Ensure symbol is valid
+        company = lookup(symbol)
+        if not company:
+            return apology("invalid symbol", 403)
+
+        # Ensure number of shares was submitted
+        shares = int(request.form.get("shares"))
+        if not shares:
+            return apology("must provide number of shares", 403)
+
+        # Query into database
+        rows = db.execute("SELECT * FROM users WHERE id = :id",
+                          id=session["user_id"])
+
+        # Ensure sufficient funds
+        cash = float(rows[0]["cash"])
+        price = company["price"]
+        if price * shares > cash:
+            return apology("insufficient funds", 403)
+
+        # Insert transaction into database
+        db.execute("INSERT INTO history (id, symbol, shares, price, timestamp) VALUES (:id, :symbol, :shares, :price, :timestamp)",
+                   id=session["user_id"], symbol=symbol, shares=shares, price=price, timestamp=datetime.now())
+
+        # Update available cash
+        db.execute("UPDATE users SET cash = :cash WHERE id = :id",
+                   cash=(cash - price * shares), id=session["user_id"])
+
+        return redirect("/")
+
+    # User reached route via GET (as by clicking a link or via redirect)
+    else:
+        return render_template("buy.html")
 
 
 @app.route("/history")
@@ -117,6 +160,9 @@ def quote():
     # User reached route via POST (as by submitting a form via POST)
     if request.method == "POST":
         company = lookup(request.form.get("symbol"))
+        if not company:
+            return apology("invalid symbol", 400)
+
         return render_template("quoted.html", name=company["name"], price=usd(company["price"]), symbol=company["symbol"])
 
     # User reached route via GET (as by clicking a link or via redirect)
@@ -127,10 +173,6 @@ def quote():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     """Register user"""
-
-    # Forget any user_id
-    session.clear()
-
     # User reached route via POST (as by submitting a form via POST)
     if request.method == "POST":
 
