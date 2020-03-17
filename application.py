@@ -48,19 +48,23 @@ if not os.environ.get("API_KEY"):
 def index():
     """Show portfolio of stocks"""
 
-    # Query database for user details
-    rows = db.execute("SELECT * FROM history where id = :id",
-                      id=session["user_id"])
-    cash = db.execute("SELECT cash FROM users WHERE id = 1")[0]["cash"]
+    # Remember current user
+    id = session["user_id"]
 
-    # Add company name in the list, update to the latest price and calculate total
-    total = 0
+    # Query database for symbols, shares and cash that the user owns
+    rows = db.execute("SELECT symbol, SUM(shares) FROM history WHERE id = :id GROUP BY symbol",
+                      id=id)
+
+    cash = float(db.execute("SELECT cash FROM users WHERE id = :id", id=id)[
+        0]["cash"])
+
+    # Lookup for company name and latest price
     for row in rows:
         company = lookup(row["symbol"])
         row["name"] = company["name"]
         row["price"] = company["price"]
-        total += row["shares"] * row["price"]
-    total += cash
+
+    total = sum([row["price"] * row['SUM(shares)'] for row in rows]) + cash
 
     return render_template("index.html", rows=rows, cash=cash, total=total)
 
@@ -117,7 +121,13 @@ def buy():
 @login_required
 def history():
     """Show history of transactions"""
-    return apology("TODO")
+
+    # Query database for transaction history
+    rows = db.execute("SELECT * FROM history WHERE id = :id",
+                      id=session["user_id"])
+
+    # User reached route via GET (as by clicking a link or via redirect)
+    return render_template("history.html", rows=rows)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -235,7 +245,23 @@ def register():
 @login_required
 def sell():
     """Sell shares of stock"""
-    return apology("TODO")
+
+    # User reached route via POST (as by submitting a form via POST)
+    if request.method == "POST":
+
+        # Ensure symbol was submitted
+        if not request.form.get("symbol"):
+            return apology("must provide symbol", 403)
+
+        # Ensure shares was submitted
+        if not request.form.get("shares"):
+            return apology("must provide shares", 403)
+
+        # Query database for stocks
+
+    # User reached route via GET (as by clicking a link or via redirect)
+    else:
+        return render_template("sell.html")
 
 
 def errorhandler(e):
