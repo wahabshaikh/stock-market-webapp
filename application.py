@@ -52,7 +52,7 @@ def index():
     id = session["user_id"]
 
     # Query database for symbols, shares and cash that the user owns
-    rows = db.execute("SELECT symbol, SUM(shares) FROM history WHERE id = :id GROUP BY symbol",
+    rows = db.execute("SELECT symbol, SUM(shares) AS shares FROM history WHERE id = :id GROUP BY symbol",
                       id=id)
 
     cash = float(db.execute("SELECT cash FROM users WHERE id = :id", id=id)[
@@ -64,7 +64,7 @@ def index():
         row["name"] = company["name"]
         row["price"] = company["price"]
 
-    total = sum([row["price"] * row['SUM(shares)'] for row in rows]) + cash
+    total = sum([row["price"] * row["shares"] for row in rows]) + cash
 
     return render_template("index.html", rows=rows, cash=cash, total=total)
 
@@ -257,11 +257,47 @@ def sell():
         if not request.form.get("shares"):
             return apology("must provide shares", 403)
 
-        # Query database for stocks
+        # Remember the symbol and shares
+        symbol = request.form.get("symbol")
+        shares = int(request.form.get("shares"))
+
+        # Query database for the number of shares of the entered symbol owned by the user
+        ownedShares = int(db.execute(
+            "SELECT SUM(shares) AS shares FROM history WHERE id = :id AND symbol = :symbol GROUP BY symbol", id=session["user_id"], symbol=symbol)[0]["shares"])
+
+        # Ensure valid shares
+        if shares > ownedShares:
+            return apology("too many shares", 403)
+
+        # Lookup for current price
+        price = lookup(symbol)["price"]
+
+        # Calculate selling price
+        total = shares * price
+
+        # Record transaction
+        db.execute("INSERT INTO history (id, symbol, shares, price, timestamp) VALUES (:id, :symbol, :shares, :price, :timestamp)",
+                   id=session["user_id"], symbol=symbol, shares=-shares, price=price, timestamp=datetime.now())
+
+        # Query database for available cash
+        cash = float(db.execute(
+            "SELECT cash FROM users WHERE id = :id", id=session["user_id"])[0]["cash"])
+
+        # Update database
+        db.execute("UPDATE users SET cash = :cash WHERE id = :id",
+                   cash=cash+total, id=session["user_id"])
+
+        # Redirect user to index page
+        return redirect("/")
 
     # User reached route via GET (as by clicking a link or via redirect)
     else:
-        return render_template("sell.html")
+
+        # Query database for the user's stocks
+        rows = db.execute(
+            "SELECT symbol FROM history WHERE id = :id GROUP BY symbol", id=session["user_id"])
+
+        return render_template("sell.html", rows=rows)
 
 
 def errorhandler(e):
